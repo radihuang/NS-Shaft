@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JDC忘年會 - 國土鳥下樓梯</title>
+    <style>
+        /* CSS reset & 基本設定 */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #2c2c54;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            touch-action: none; /* 禁止手機預設手勢 */
+        }
+
+        /* 遊戲主容器 */
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 480px; /* 手機直式最佳寬度 */
+            height: 100vh;      /* 全螢幕高度 */
+            background: #1a1a2e;
+            overflow: hidden;
+            border-left: 2px solid #444;
+            border-right: 2px solid #444;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            /* 關鍵：讓像素圖放大後保持銳利，不要模糊 */
+            image-rendering: pixelated; 
+            image-rendering: crisp-edges;
+        }
+
+        /* UI 層 (分數、按鈕) */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 10;
+        }
+
+        /* 分數顯示區 */
+        #score-board {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 20px;
+            color: #FFD700;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+        }
+
+        .score-label { font-size: 14px; color: #aaa; }
+
+        /* 遊戲開始 & 結束 遮罩 */
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(26, 26, 46, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            pointer-events: auto;
+            z-index: 20;
+        }
+
+        h1 {
+            font-size: 32px;
+            text-align: center;
+            color: #FFD700;
+            margin-bottom: 10px;
+            text-shadow: 4px 4px 0 #8B4513;
+            line-height: 1.4;
+        }
+
+        p { margin: 5px 0; text-align: center; }
+
+        /* 按鈕樣式 */
+        .btn {
+            background: #e67e22;
+            color: white;
+            border: none;
+            border-bottom: 6px solid #d35400;
+            border-radius: 8px;
+            padding: 15px 50px;
+            font-size: 24px;
+            font-family: inherit;
+            cursor: pointer;
+            margin-top: 30px;
+            transition: all 0.1s;
+        }
+
+        .btn:active {
+            transform: translateY(4px);
+            border-bottom: 2px solid #d35400;
+        }
+        
+        .btn:disabled {
+            background: #7f8c8d;
+            border-bottom-color: #95a5a6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* 虛擬按鍵區 (底部) */
+        #controls {
+            display: none; /* 遊戲中才顯示 */
+            width: 100%;
+            height: 140px; /* 加大觸控區 */
+            position: absolute;
+            bottom: 0;
+            pointer-events: auto;
+            justify-content: space-between;
+            padding: 20px 30px;
+            box-sizing: border-box;
+            background: linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+        }
+
+        .control-btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+            color: white;
+            user-select: none;
+            backdrop-filter: blur(2px);
+            transition: background 0.1s;
+        }
+        
+        .control-btn:active, .control-btn.active {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(0.95);
+        }
+
+        .hidden { display: none !important; }
+        
+        /* 頂部尖刺裝飾 */
+        #spikes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 20px;
+            background: repeating-linear-gradient(
+                -45deg,
+                #888,
+                #888 10px,
+                #555 10px,
+                #555 20px
+            );
+            z-index: 5;
+            box-shadow: 0 5px 10px rgba(0,0,0,0.5);
+        }
+        
+        /* 載入中提示 */
+        #loading-msg { color: #f39c12; font-size: 18px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="spikes"></div> <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div id="score-board">
+            <div><span class="score-label">BEST</span> <span id="best-score">0.00</span></div>
+            <div><span class="score-label">TIME</span> <span id="time-display">0.00</span></div>
+        </div>
+        <div id="controls">
+            <div class="control-btn" id="btn-left">◀</div>
+            <div class="control-btn" id="btn-right">▶</div>
+        </div>
+    </div>
+
+    <div id="start-screen">
+        <h1>JDC 忘年會<br>國土鳥下樓梯</h1>
+        <p style="color: #aaa;">最高紀錄: <span id="start-best-score">0.00</span>s</p>
+        <p style="font-size: 14px; margin-top:20px; color:#ddd;">左右移動，往下跳！<br>碰到頂端尖刺或掉出底部即結束。</p>
+        <div id="loading-msg">正在載入資源...(<span id="load-count">0</span>/4)</div>
+        <button class="btn" id="start-btn" onclick="startGame()" disabled>請稍候...</button>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+        <h1 style="color: #e74c3c;">GAME OVER</h1>
+        <p>生存時間</p>
+        <h2 id="final-score" style="font-size: 48px; color: #FFD700; margin: 10px 0;">0.00s</h2>
+        
+        <div id="new-record-msg" class="hidden" style="color: #2ecc71; font-weight: bold; font-size: 20px; animation: blink 1s infinite;">★ NEW RECORD ★</div>
+        
+        <button class="btn" onclick="resetGame()">再玩一次</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // 關閉圖片平滑處理，保持像素風格
+    ctx.imageSmoothingEnabled = false; ctx.mozImageSmoothingEnabled = false; ctx.webkitImageSmoothingEnabled = false; ctx.msImageSmoothingEnabled = false;
+
+    // --- 載入圖片資源 (更新檔名) ---
+    const imgRight = new Image(); imgRight.src = 'run_right_0.png'; // 正常向右
+    const imgLeft = new Image();  imgLeft.src = 'run_left_0.png';  // 正常向左
+    const imgDeath = new Image(); imgDeath.src = 'death_0.png';    // 死亡圖片
+    const imgBg = new Image();    imgBg.src = 'background.png';    // 背景圖片
+
+    let assetsLoaded = false;
+    let loadedCount = 0;
+    const totalAssets = 4; // 總共需要載入 4 張圖
+
+    function onImageLoad() {
+        loadedCount++;
+        document.getElementById('load-count').innerText = loadedCount;
+        if (loadedCount === totalAssets) {
+            assetsLoaded = true;
+            const startBtn = document.getElementById('start-btn');
+            startBtn.disabled = false;
+            startBtn.innerText = "開始遊戲";
+            document.getElementById('loading-msg').style.display = 'none';
+        }
+    }
+    imgRight.onload = onImageLoad; imgLeft.onload = onImageLoad;
+    imgDeath.onload = onImageLoad; imgBg.onload = onImageLoad;
+    
+    // 更新錯誤提示，方便除錯
+    imgRight.onerror = () => { alert("無法載入 run_right_0.png"); };
+    imgLeft.onerror = () => { alert("無法載入 run_left_0.png"); };
+    imgDeath.onerror = () => { alert("無法載入 death_0.png"); };
+    imgBg.onerror = () => { alert("無法載入 background.png"); };
+
+
+    // RWD 設定
+    function resize() {
+        const container = document.getElementById('game-container');
+        canvas.width = container.offsetWidth;
+        canvas.height = container.offsetHeight;
+        ctx.imageSmoothingEnabled = false;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // --- 遊戲參數設定 ---
+    const GRAVITY = 0.6;
+    const MOVE_SPEED = 6;
+    const INITIAL_SCROLL_SPEED = 2.0;
+    const MAX_SCROLL_SPEED = 8.0;
+    
+    const player = {
+        x: 0, y: 100, 
+        width: 30,  // 較小的碰撞寬度
+        height: 24, // 較小的碰撞高度
+        vx: 0, vy: 0,
+        direction: 'right'
+    };
+
+    let platforms = [];
+    let clouds = [];
+    let gameState = 'START';
+    let startTime = 0;
+    let currentScore = 0;
+    let bestScore = localStorage.getItem('jdc_game_best') || 0;
+    let scrollSpeed = INITIAL_SCROLL_SPEED;
+    let animationId;
+    
+    document.getElementById('best-score').innerText = parseFloat(bestScore).toFixed(2);
+    document.getElementById('start-best-score').innerText = parseFloat(bestScore).toFixed(2);
+
+    // --- 操作控制 ---
+    const keys = { left: false, right: false };
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'ArrowLeft') keys.left = true;
+        if (e.code === 'ArrowRight') keys.right = true;
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowLeft') keys.left = false;
+        if (e.code === 'ArrowRight') keys.right = false;
+    });
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+    const addTouch = (elem, key) => {
+        const startAction = (e) => { if(e.cancelable) e.preventDefault(); keys[key] = true; elem.classList.add('active'); };
+        const endAction = (e) => { if(e.cancelable) e.preventDefault(); keys[key] = false; elem.classList.remove('active'); };
+        elem.addEventListener('touchstart', startAction, {passive: false}); elem.addEventListener('touchend', endAction);
+        elem.addEventListener('mousedown', startAction); elem.addEventListener('mouseup', endAction); elem.addEventListener('mouseleave', endAction);
+    };
+    addTouch(btnLeft, 'left'); addTouch(btnRight, 'right');
+
+    // --- 遊戲邏輯 ---
+
+    function createPlatform(y) {
+        const minWidth = canvas.width * 0.25; const maxWidth = canvas.width * 0.5;
+        const width = minWidth + Math.random() * (maxWidth - minWidth);
+        const x = Math.random() * (canvas.width - width);
+        platforms.push({ x, y, width, height: 18 });
+    }
+
+    function createCloud(y) {
+        const width = 40 + Math.random() * 40; 
+        const height = 20 + Math.random() * 10; 
+        const x = Math.random() * (canvas.width + width) - width; 
+        clouds.push({ x, y, width, height});
+    }
+
+    function init() {
+        resize();
+        player.x = canvas.width / 2 - player.width / 2;
+        player.y = 100; player.vx = 0; player.vy = 0;
+        player.direction = 'right';
+        scrollSpeed = INITIAL_SCROLL_SPEED;
+        platforms = [];
+        clouds = [];
+        
+        let startY = 250;
+        for(let i=0; i<7; i++) { createPlatform(startY); startY += 130; }
+
+        for(let i=0; i<8; i++) {
+            createCloud(Math.random() * canvas.height * 1.5); 
+        }
+    }
+
+    function startGame() {
+        if (!assetsLoaded) return;
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('game-over-screen').classList.add('hidden');
+        document.getElementById('controls').style.display = 'flex';
+        init();
+        gameState = 'PLAYING';
+        startTime = Date.now();
+        loop();
+    }
+
+    function startDyingAnimation() {
+        gameState = 'DYING';
+        document.getElementById('controls').style.display = 'none';
+        const displacement = -(canvas.height * (2/3));
+        player.vy = -Math.sqrt(-2 * GRAVITY * displacement);
+    }
+
+    function gameOver() {
+        gameState = 'GAMEOVER';
+        cancelAnimationFrame(animationId);
+        const finalTime = currentScore;
+        document.getElementById('final-score').innerText = finalTime.toFixed(2) + 's';
+        const isNewRecord = finalTime > parseFloat(bestScore);
+        const msg = document.getElementById('new-record-msg');
+        if (isNewRecord) {
+            bestScore = finalTime; localStorage.setItem('jdc_game_best', bestScore);
+            document.getElementById('best-score').innerText = bestScore.toFixed(2); msg.classList.remove('hidden');
+        } else { msg.classList.add('hidden'); }
+        document.getElementById('game-over-screen').classList.remove('hidden');
+    }
+
+    function resetGame() { startGame(); }
+
+    function update() {
+        if (gameState === 'PLAYING' || gameState === 'DYING') {
+             clouds.forEach(c => {
+                c.y -= scrollSpeed; 
+            });
+            if (clouds.length > 0 && clouds[0].y + clouds[0].height < -50) {
+                clouds.shift();
+            }
+            if (Math.random() < 0.03) { 
+                createCloud(canvas.height + 50 + Math.random() * 100);
+            }
+        }
+
+        if (gameState === 'PLAYING') {
+            let now = Date.now();
+            currentScore = (now - startTime) / 1000;
+            document.getElementById('time-display').innerText = currentScore.toFixed(2);
+
+            let targetSpeed = INITIAL_SCROLL_SPEED + (currentScore * 0.02);
+            if (targetSpeed > MAX_SCROLL_SPEED) targetSpeed = MAX_SCROLL_SPEED;
+            scrollSpeed = targetSpeed;
+
+            if (keys.left) { player.x -= MOVE_SPEED; player.direction = 'left'; }
+            if (keys.right) { player.x += MOVE_SPEED; player.direction = 'right'; }
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+            player.vy += GRAVITY;
+            player.y += player.vy;
+
+            let onPlatform = false;
+            platforms.forEach((p, index) => {
+                p.y -= scrollSpeed;
+                if (player.vy > 0 && player.x + player.width > p.x + 2 && player.x < p.x + p.width - 2 &&
+                    player.y + player.height > p.y && player.y + player.height < p.y + p.height + player.vy + 2) {
+                    player.y = p.y - player.height; player.vy = 0; onPlatform = true;
+                }
+            });
+            if (onPlatform) player.y -= scrollSpeed;
+
+            if (platforms.length > 0 && platforms[0].y < -20) platforms.shift();
+            let lastP = platforms[platforms.length - 1];
+            let gap = 120 + (currentScore * 0.5); if (gap > 200) gap = 200;
+            if (lastP.y < canvas.height - gap) createPlatform(canvas.height + 50);
+
+            if (player.y <= 0) gameOver();
+            if (player.y > canvas.height) startDyingAnimation();
+
+        } else if (gameState === 'DYING') {
+            player.vy += GRAVITY;
+            player.y += player.vy;
+            if (player.vy > 0 && player.y > canvas.height / 3) gameOver();
+        }
+    }
+
+    function drawPixelCloud(ctx, x, y, w, h) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        const step = 5; 
+        ctx.fillRect(x, y + step, w, h - step*2);
+        ctx.fillRect(x + step*2, y, w - step*4, step);
+        ctx.fillRect(x + step, y + h - step, w - step*2, step);
+    }
+
+    function draw() {
+        // 1. 畫背景
+        if (assetsLoaded) {
+            ctx.drawImage(imgBg, 0, 0, canvas.width, canvas.height);
+        } else {
+            ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // 2. 畫雲朵
+        clouds.forEach(c => {
+            drawPixelCloud(ctx, c.x, c.y, c.width, c.height);
+        });
+        
+        // 3. 畫平台
+        platforms.forEach(p => {
+            ctx.fillStyle = '#B84E29'; ctx.fillRect(p.x, p.y, p.width, p.height);
+            ctx.strokeStyle = '#5a2310'; ctx.lineWidth = 2; ctx.strokeRect(p.x, p.y, p.width, p.height);
+            ctx.fillStyle = '#6e2c14'; ctx.beginPath();
+            ctx.arc(p.x + 10, p.y + 9, 3, 0, Math.PI*2); ctx.arc(p.x + p.width - 10, p.y + 9, 3, 0, Math.PI*2); ctx.fill();
+        });
+
+        // 4. 畫主角
+        if (assetsLoaded) {
+            let currentImg;
+            if (gameState === 'DYING') {
+                currentImg = imgDeath;
+            } else {
+                currentImg = player.direction === 'left' ? imgLeft : imgRight;
+            }
+            // 強制縮放到設定的大小
+            ctx.drawImage(currentImg, player.x, player.y, player.width, player.height);
+        }
+    }
+
+    function loop() {
+        if (gameState !== 'GAMEOVER') {
+            update();
+            draw();
+            animationId = requestAnimationFrame(loop);
+        }
+    }
+
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = `@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }`;
+    document.head.appendChild(styleSheet);
+
+    draw(); 
+
+</script>
+</body>
+</html>
