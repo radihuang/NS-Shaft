@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>JDC忘年會 - 國土鳥下樓梯</title>
+    <style>
+        /* CSS reset & 基本設定 */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #2c2c54;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            touch-action: none; /* 禁止手機預設手勢 */
+        }
+
+        /* 遊戲主容器 */
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 480px; /* 手機直式最佳寬度 */
+            height: 100vh;      /* 全螢幕高度 */
+            background: #1a1a2e;
+            overflow: hidden;
+            border-left: 2px solid #444;
+            border-right: 2px solid #444;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI 層 (分數、按鈕) */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* 分數顯示區 */
+        #score-board {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 20px;
+            color: #FFD700;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 2px 2px 0 #000;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.6), transparent);
+        }
+
+        .score-label { font-size: 14px; color: #aaa; }
+
+        /* 遊戲開始 & 結束 遮罩 */
+        #start-screen, #game-over-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(26, 26, 46, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            pointer-events: auto;
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 32px;
+            text-align: center;
+            color: #FFD700;
+            margin-bottom: 10px;
+            text-shadow: 4px 4px 0 #8B4513;
+            line-height: 1.4;
+        }
+
+        p { margin: 5px 0; }
+
+        /* 按鈕樣式 */
+        .btn {
+            background: #e67e22;
+            color: white;
+            border: none;
+            border-bottom: 6px solid #d35400;
+            border-radius: 8px;
+            padding: 15px 50px;
+            font-size: 24px;
+            font-family: inherit;
+            cursor: pointer;
+            margin-top: 30px;
+            transition: all 0.1s;
+        }
+
+        .btn:active {
+            transform: translateY(4px);
+            border-bottom: 2px solid #d35400;
+        }
+
+        /* 虛擬按鍵區 (底部) */
+        #controls {
+            display: none; /* 遊戲中才顯示 */
+            width: 100%;
+            height: 140px; /* 加大觸控區 */
+            position: absolute;
+            bottom: 0;
+            pointer-events: auto;
+            justify-content: space-between;
+            padding: 20px 30px;
+            box-sizing: border-box;
+            background: linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+        }
+
+        .control-btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255,255,255,0.5);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 30px;
+            color: white;
+            user-select: none;
+            backdrop-filter: blur(2px);
+            transition: background 0.1s;
+        }
+        
+        .control-btn:active, .control-btn.active {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(0.95);
+        }
+
+        .hidden { display: none !important; }
+        
+        /* 頂部尖刺裝飾 */
+        #spikes {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 20px;
+            background: repeating-linear-gradient(
+                -45deg,
+                #888,
+                #888 10px,
+                #555 10px,
+                #555 20px
+            );
+            z-index: 5;
+            box-shadow: 0 5px 10px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="spikes"></div> <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div id="score-board">
+            <div><span class="score-label">BEST</span> <span id="best-score">0.00</span></div>
+            <div><span class="score-label">TIME</span> <span id="time-display">0.00</span></div>
+        </div>
+        <div id="controls">
+            <div class="control-btn" id="btn-left">◀</div>
+            <div class="control-btn" id="btn-right">▶</div>
+        </div>
+    </div>
+
+    <div id="start-screen">
+        <h1>JDC 忘年會<br>國土鳥下樓梯</h1>
+        <p style="color: #aaa;">最高紀錄: <span id="start-best-score">0.00</span>s</p>
+        <p style="font-size: 14px; margin-top:20px; color:#ddd;">左右移動，往下跳！<br>碰到頂端尖刺或掉出底部即結束。</p>
+        <button class="btn" onclick="startGame()">開始遊戲</button>
+    </div>
+
+    <div id="game-over-screen" class="hidden">
+        <h1 style="color: #e74c3c;">GAME OVER</h1>
+        <p>生存時間</p>
+        <h2 id="final-score" style="font-size: 48px; color: #FFD700; margin: 10px 0;">0.00s</h2>
+        
+        <div id="new-record-msg" class="hidden" style="color: #2ecc71; font-weight: bold; font-size: 20px; animation: blink 1s infinite;">★ NEW RECORD ★</div>
+        
+        <button class="btn" onclick="resetGame()">再玩一次</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // RWD 設定：動態調整 Canvas 大小
+    function resize() {
+        const container = document.getElementById('game-container');
+        canvas.width = container.offsetWidth;
+        canvas.height = container.offsetHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // --- 遊戲參數設定 ---
+    const GRAVITY = 0.6;          // 重力
+    const MOVE_SPEED = 6;         // 左右移動速度
+    const INITIAL_SCROLL_SPEED = 2.0; // 初始捲動速度
+    const MAX_SCROLL_SPEED = 8.0;     // 最大捲動速度 (防止快到人類無法反應)
+    
+    // 國土鳥 (主角)
+    const player = {
+        x: 0,
+        y: 100,
+        width: 30,
+        height: 30,
+        vx: 0,
+        vy: 0,
+        color: '#00AA00',    // 鳥身綠
+        beakColor: '#FF6600' // 嘴巴橘
+    };
+
+    // 遊戲變數
+    let platforms = [];
+    let gameState = 'START'; // START, PLAYING, GAMEOVER
+    let startTime = 0;
+    let currentScore = 0;
+    let bestScore = localStorage.getItem('jdc_game_best') || 0;
+    let scrollSpeed = INITIAL_SCROLL_SPEED;
+    let animationId;
+    
+    // 初始化最高分顯示
+    document.getElementById('best-score').innerText = parseFloat(bestScore).toFixed(2);
+    document.getElementById('start-best-score').innerText = parseFloat(bestScore).toFixed(2);
+
+    // --- 操作控制 ---
+    const keys = { left: false, right: false };
+
+    // 鍵盤監聽
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'ArrowLeft') keys.left = true;
+        if (e.code === 'ArrowRight') keys.right = true;
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'ArrowLeft') keys.left = false;
+        if (e.code === 'ArrowRight') keys.right = false;
+    });
+
+    // 觸控/滑鼠監聽 (虛擬按鍵)
+    const btnLeft = document.getElementById('btn-left');
+    const btnRight = document.getElementById('btn-right');
+
+    const addTouch = (elem, key) => {
+        const startAction = (e) => { 
+            if(e.cancelable) e.preventDefault(); 
+            keys[key] = true; 
+            elem.classList.add('active');
+        };
+        const endAction = (e) => { 
+            if(e.cancelable) e.preventDefault(); 
+            keys[key] = false; 
+            elem.classList.remove('active');
+        };
+
+        elem.addEventListener('touchstart', startAction, {passive: false});
+        elem.addEventListener('touchend', endAction);
+        elem.addEventListener('mousedown', startAction);
+        elem.addEventListener('mouseup', endAction);
+        elem.addEventListener('mouseleave', endAction);
+    };
+    addTouch(btnLeft, 'left');
+    addTouch(btnRight, 'right');
+
+    // --- 遊戲邏輯 ---
+
+    function createPlatform(y) {
+        // 隨機寬度與位置
+        const minWidth = canvas.width * 0.25; // 至少佔畫面 1/4
+        const maxWidth = canvas.width * 0.5;
+        const width = minWidth + Math.random() * (maxWidth - minWidth);
+        const x = Math.random() * (canvas.width - width);
+        
+        platforms.push({ x, y, width, height: 18 });
+    }
+
+    function init() {
+        resize(); // 確保開始時尺寸正確
+        player.x = canvas.width / 2 - 15;
+        player.y = 100;
+        player.vx = 0;
+        player.vy = 0;
+        
+        scrollSpeed = INITIAL_SCROLL_SPEED;
+        platforms = [];
+        
+        // 初始生成一系列平台
+        let startY = 250;
+        for(let i=0; i<7; i++) {
+            createPlatform(startY);
+            startY += 130; // 平台間距
+        }
+    }
+
+    function startGame() {
+        document.getElementById('start-screen').classList.add('hidden');
+        document.getElementById('game-over-screen').classList.add('hidden');
+        document.getElementById('controls').style.display = 'flex';
+        init();
+        
+        gameState = 'PLAYING';
+        startTime = Date.now();
+        loop();
+    }
+
+    function gameOver() {
+        gameState = 'GAMEOVER';
+        cancelAnimationFrame(animationId);
+        
+        const finalTime = currentScore;
+        document.getElementById('final-score').innerText = finalTime.toFixed(2) + 's';
+        
+        // 檢查是否破紀錄
+        const isNewRecord = finalTime > parseFloat(bestScore);
+        const msg = document.getElementById('new-record-msg');
+        
+        if (isNewRecord) {
+            bestScore = finalTime;
+            localStorage.setItem('jdc_game_best', bestScore);
+            document.getElementById('best-score').innerText = bestScore.toFixed(2);
+            msg.classList.remove('hidden');
+        } else {
+            msg.classList.add('hidden');
+        }
+
+        document.getElementById('game-over-screen').classList.remove('hidden');
+        document.getElementById('controls').style.display = 'none';
+    }
+
+    function resetGame() {
+        startGame();
+    }
+
+    function update() {
+        let now = Date.now();
+        currentScore = (now - startTime) / 1000;
+        document.getElementById('time-display').innerText = currentScore.toFixed(2);
+
+        // --- 難度曲線 (Chrome Dino 風格) ---
+        // 隨著時間線性增加速度，而非階梯式
+        // 公式：初始速度 + (時間 * 加速率)
+        // 假設每生存 10 秒，速度增加 0.2
+        let targetSpeed = INITIAL_SCROLL_SPEED + (currentScore * 0.02);
+        
+        // 限制最大速度
+        if (targetSpeed > MAX_SCROLL_SPEED) targetSpeed = MAX_SCROLL_SPEED;
+        scrollSpeed = targetSpeed;
+
+        // 玩家左右移動
+        if (keys.left) player.x -= MOVE_SPEED;
+        if (keys.right) player.x += MOVE_SPEED;
+
+        // 左右邊界阻擋
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+        // 重力與垂直移動
+        player.vy += GRAVITY;
+        player.y += player.vy;
+
+        // 平台邏輯
+        let onPlatform = false;
+        
+        platforms.forEach((p, index) => {
+            // 平台上升
+            p.y -= scrollSpeed;
+
+            // 碰撞檢測：只有在「往下掉」且「腳碰到平台上方」時才算踩到
+            if (player.vy > 0 &&
+                player.x + player.width > p.x + 5 &&  // 稍微內縮判定，避免邊緣滑落太敏感
+                player.x < p.x + p.width - 5 &&
+                player.y + player.height > p.y &&
+                player.y + player.height < p.y + p.height + player.vy + 2 
+            ) {
+                player.y = p.y - player.height;
+                player.vy = 0; 
+                onPlatform = true;
+            }
+        });
+
+        // 若站在平台上，隨平台上升
+        if (onPlatform) {
+            player.y -= scrollSpeed;
+        }
+
+        // 移除超出頂部的平台
+        if (platforms.length > 0 && platforms[0].y < -20) {
+            platforms.shift();
+        }
+
+        // 補充底部平台
+        let lastP = platforms[platforms.length - 1];
+        // 當最後一個平台上升到足夠高時，生成下一個
+        // 間距也會隨難度稍微拉大，增加刺激感
+        let gap = 120 + (currentScore * 0.5); 
+        if (gap > 200) gap = 200; // 限制最大間距
+
+        if (lastP.y < canvas.height - gap) {
+            createPlatform(canvas.height + 50);
+        }
+
+        // --- 死亡判定 ---
+        
+        // 1. 被頂部刺死 (y < 0)
+        // 增加一個緩衝區，碰到真正頂部才死
+        if (player.y <= 0) {
+            gameOver();
+        }
+
+        // 2. 掉落深淵 (y > canvas.height)
+        if (player.y > canvas.height) {
+            gameOver();
+        }
+    }
+
+    function draw() {
+        // 背景
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 背景網格 (像素風裝飾)
+        ctx.strokeStyle = '#2c2c54';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for(let i=0; i<canvas.width; i+=40) ctx.moveTo(i,0), ctx.lineTo(i,canvas.height);
+        for(let j=0; j<canvas.height; j+=40) ctx.moveTo(0,j), ctx.lineTo(canvas.width,j);
+        ctx.stroke();
+
+        // 畫平台 (鋼樑風格)
+        platforms.forEach(p => {
+            // 主體
+            ctx.fillStyle = '#B84E29';
+            ctx.fillRect(p.x, p.y, p.width, p.height);
+            // 邊框
+            ctx.strokeStyle = '#5a2310';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(p.x, p.y, p.width, p.height);
+            // 鉚釘裝飾 (兩端)
+            ctx.fillStyle = '#6e2c14';
+            ctx.beginPath();
+            ctx.arc(p.x + 10, p.y + 9, 3, 0, Math.PI*2);
+            ctx.arc(p.x + p.width - 10, p.y + 9, 3, 0, Math.PI*2);
+            ctx.fill();
+        });
+
+        // 畫主角 (綠色國土鳥 - 像素塊)
+        // 身體
+        ctx.fillStyle = player.color;
+        ctx.fillRect(player.x, player.y, player.width, player.height);
+        
+        // 眼睛 (白色底 + 黑色珠)
+        ctx.fillStyle = 'white';
+        ctx.fillRect(player.x + 20, player.y + 6, 8, 8);
+        ctx.fillStyle = 'black';
+        ctx.fillRect(player.x + 24, player.y + 8, 2, 2);
+        
+        // 大嘴巴 (橘色)
+        ctx.fillStyle = player.beakColor;
+        ctx.fillRect(player.x + 24, player.y + 16, 14, 8);
+        
+        // 翅膀
+        ctx.fillStyle = '#007700';
+        ctx.fillRect(player.x - 4, player.y + 16, 10, 10);
+    }
+
+    function loop() {
+        if (gameState === 'PLAYING') {
+            update();
+            draw();
+            animationId = requestAnimationFrame(loop);
+        }
+    }
+
+    // CSS 動畫 keyframes
+    const styleSheet = document.createElement("style");
+    styleSheet.innerText = `
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0; }
+            100% { opacity: 1; }
+        }
+    `;
+    document.head.appendChild(styleSheet);
+
+    draw(); // 初始畫面
+
+</script>
+</body>
+</html>
